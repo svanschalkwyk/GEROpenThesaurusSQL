@@ -1,0 +1,144 @@
+package main
+
+import (
+	//"fmt"
+	"strings"
+	"github.com/tealeg/xlsx"
+	"fmt"
+//	"errors"
+	_ "github.com/go-sql-driver/mysql"
+	"database/sql"
+	//"log"
+)
+
+type Keyword struct {
+	term string
+	subterms []string
+	synonyms [][]string
+}
+var keywords []Keyword
+
+//var stopwords = []string{"and", "or"}
+const readExcelFileName = "/home/steph/Downloads/ENSCIGHT/synononyms/GER_Search_Label_Translations.xlsx"
+const writeExcelFileName = "/home/steph/Downloads/ENSCIGHT/synononyms/GER_Search_Label_Translations_1.xlsx"
+const sqlstatement = "SELECT term.word FROM term, synset, term term2 WHERE synset.is_visible = 1 AND synset.id = " +
+	"term.synset_id AND term.synset_id AND term2.synset_id = synset.id AND term2.word = ?"
+
+func splitKeywords(s string) []string  {
+	w := strings.FieldsFunc(s, func(r rune) bool {
+		switch r {
+		case '<', '>', ' ', '|', '&', '/', '\'', '(', ')','[',']',',',';',':':
+			return true
+		}
+		return false
+	})
+	return w
+}
+
+func write_results() {
+	var row *xlsx.Row
+	var cell,cell1 *xlsx.Cell
+
+	excelFile := xlsx.NewFile()//.OpenFile(excelFileName)
+
+	sheet,_ := excelFile.AddSheet("Synonyms")
+	row = sheet.AddRow()
+	cell = row.AddCell()
+	cell.Value= "Term"
+	cell = row.AddCell()
+	cell.Value = "Synonyms_1"
+	cell = row.AddCell()
+	cell.Value = "Synonyms_2"
+	for _, kw := range keywords {
+		row1 := sheet.AddRow()
+		cell1 = row1.AddCell()
+		cell1.Value = kw.term;
+		for _, syns := range kw.synonyms {
+			cell2 := row1.AddCell()
+
+			for _, syn := range syns {
+				//fmt.Println(syn)
+				cell2.Value = cell2.Value + "," +  syn
+			}
+		}
+	}
+	excelFile.Save(writeExcelFileName)
+}
+
+func get_keywords() {
+
+	excelFile, err := xlsx.OpenFile(readExcelFileName)
+	if err != nil {
+		return
+	}
+
+	sheet := excelFile.Sheets[0]
+	for _, row := range sheet.Rows[1:] {
+		fullterm := strings.TrimSpace(strings.ToLower(row.Cells[1].Value)) // Translation in 2nd col
+		keyword := Keyword{term:fullterm}
+
+		kwt := splitKeywords(fullterm)
+
+		if len(kwt) > 1 {
+			keyword.subterms = append(keyword.subterms, fullterm)
+		}
+
+		for _,kw := range kwt {
+			keyword.subterms = append(keyword.subterms, kw)
+		}
+		keywords = append(keywords, keyword)
+	}
+}
+
+
+func checkErr(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func main() {
+	get_keywords()
+	db, err := sql.Open("mysql", "root:@sk3rmunk3l@/openthesaurus?charset=utf8")
+	checkErr(err)
+	defer db.Close()
+	// Prepare statement for inserting data
+	stmtOut, err := db.Prepare(sqlstatement) // ? = placeholder
+	checkErr(err)
+	defer stmtOut.Close() // Close the statement when we leave main() / the program terminates
+
+	if len(keywords) > 0 {
+		for id, terms := range keywords {
+			synonyms := []string{}
+			m := make(map[string]string) // remove duplicates
+			for _, term := range terms.subterms {
+				fmt.Println(term)
+				//rows, err := stmtOut.Exec(term)
+				//checkErr(err)
+				rows, _ := db.Query(sqlstatement, term)
+				for rows.Next() {
+					var word string
+					err = rows.Scan(&word)
+					//fmt.Println(word)
+
+					if _, found := m[word]; !found {
+						synonyms = append(synonyms, word)
+						m[word] = word
+					}
+				}
+
+			}
+				fmt.Println(synonyms)
+				keywords[id].synonyms = append(keywords[id].synonyms, synonyms) // add array to synonym array
+				totalSynonyms := 0
+				for _, synonym_count := range keywords[id].synonyms {
+					totalSynonyms += len(synonym_count)
+				}
+				fmt.Println(terms.term, terms.synonyms)
+			}
+		}
+	write_results()
+	}
+
+
+
