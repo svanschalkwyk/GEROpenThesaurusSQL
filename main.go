@@ -8,6 +8,7 @@ import (
 //	"errors"
 	_ "github.com/go-sql-driver/mysql"
 	"database/sql"
+	"github.com/bbalet/stopwords"
 	//"log"
 )
 
@@ -18,7 +19,7 @@ type Keyword struct {
 }
 var keywords []Keyword
 
-//var stopwords = []string{"and", "or"}
+
 const readExcelFileName = "/home/steph/Downloads/ENSCIGHT/synononyms/GER_Search_Label_Translations.xlsx"
 const writeExcelFileName = "/home/steph/Downloads/ENSCIGHT/synononyms/GER_Search_Label_Translations_1.xlsx"
 const sqlstatement = "SELECT term.word FROM term, synset, term term2 WHERE synset.is_visible = 1 AND synset.id = " +
@@ -27,7 +28,7 @@ const sqlstatement = "SELECT term.word FROM term, synset, term term2 WHERE synse
 func splitKeywords(s string) []string  {
 	w := strings.FieldsFunc(s, func(r rune) bool {
 		switch r {
-		case '<', '>', ' ', '|', '&', '/', '\'', '(', ')','[',']',',',';',':':
+		case '<', '>', ' ', '|', '&', '/', '\'', '(', ')','[',']',',',';',':','-':
 			return true
 		}
 		return false
@@ -37,7 +38,7 @@ func splitKeywords(s string) []string  {
 
 func write_results() {
 	var row *xlsx.Row
-	var cell,cell1 *xlsx.Cell
+	var cell *xlsx.Cell
 
 	excelFile := xlsx.NewFile()//.OpenFile(excelFileName)
 
@@ -50,15 +51,15 @@ func write_results() {
 	cell = row.AddCell()
 	cell.Value = "Synonyms_2"
 	for _, kw := range keywords {
-		row1 := sheet.AddRow()
-		cell1 = row1.AddCell()
-		cell1.Value = kw.term;
+		row := sheet.AddRow()
+		cell = row.AddCell()
+		cell.Value = kw.term;
 		for _, syns := range kw.synonyms {
-			cell2 := row1.AddCell()
+			cell := row.AddCell()
 
 			for _, syn := range syns {
 				//fmt.Println(syn)
-				cell2.Value = cell2.Value + "," +  syn
+				cell.Value = cell.Value + "," +  syn
 			}
 		}
 	}
@@ -76,14 +77,15 @@ func get_keywords() {
 	for _, row := range sheet.Rows[1:] {
 		fullterm := strings.TrimSpace(strings.ToLower(row.Cells[1].Value)) // Translation in 2nd col
 		keyword := Keyword{term:fullterm}
-
-		kwt := splitKeywords(fullterm)
-
+		clean := stopwords.Clean([]byte(fullterm), "de", true)
+		kwt := splitKeywords(string(clean))
+fmt.Println(fullterm, len(kwt))
 		if len(kwt) > 1 {
 			keyword.subterms = append(keyword.subterms, fullterm)
 		}
 
 		for _,kw := range kwt {
+			fmt.Println(kw)
 			keyword.subterms = append(keyword.subterms, kw)
 		}
 		keywords = append(keywords, keyword)
@@ -126,7 +128,6 @@ func main() {
 						m[word] = word
 					}
 				}
-
 			}
 				fmt.Println(synonyms)
 				keywords[id].synonyms = append(keywords[id].synonyms, synonyms) // add array to synonym array
