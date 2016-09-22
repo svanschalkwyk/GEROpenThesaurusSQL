@@ -1,15 +1,12 @@
 package main
 
 import (
-	//"fmt"
 	"strings"
 	"github.com/tealeg/xlsx"
-	"fmt"
-//	"errors"
 	_ "github.com/go-sql-driver/mysql"
 	"database/sql"
 	"github.com/bbalet/stopwords"
-	//"log"
+	"log"
 )
 
 type Keyword struct {
@@ -18,7 +15,6 @@ type Keyword struct {
 	synonyms [][]string
 }
 var keywords []Keyword
-
 
 const readExcelFileName = "/home/steph/Downloads/ENSCIGHT/synononyms/GER_Search_Label_Translations.xlsx"
 const writeExcelFileName = "/home/steph/Downloads/ENSCIGHT/synononyms/GER_Search_Label_Translations_1.xlsx"
@@ -58,8 +54,12 @@ func write_results() {
 			cell := row.AddCell()
 
 			for _, syn := range syns {
-				//fmt.Println(syn)
-				cell.Value = cell.Value + "," +  syn
+				//log.Println(syn)
+				if cell.Value != "" {
+					cell.Value = cell.Value + "," + syn
+				} else {
+					cell.Value = syn
+				}
 			}
 		}
 	}
@@ -67,7 +67,6 @@ func write_results() {
 }
 
 func get_keywords() {
-
 	excelFile, err := xlsx.OpenFile(readExcelFileName)
 	if err != nil {
 		return
@@ -79,13 +78,13 @@ func get_keywords() {
 		keyword := Keyword{term:fullterm}
 		clean := stopwords.Clean([]byte(fullterm), "de", true)
 		kwt := splitKeywords(string(clean))
-fmt.Println(fullterm, len(kwt))
+		log.Println(fullterm, len(kwt))
 		if len(kwt) > 1 {
 			keyword.subterms = append(keyword.subterms, fullterm)
 		}
 
-		for _,kw := range kwt {
-			fmt.Println(kw)
+		for _, kw := range kwt {
+			//log.Println(kw)
 			keyword.subterms = append(keyword.subterms, kw)
 		}
 		keywords = append(keywords, keyword)
@@ -105,41 +104,42 @@ func main() {
 	checkErr(err)
 	defer db.Close()
 	// Prepare statement for inserting data
-	stmtOut, err := db.Prepare(sqlstatement) // ? = placeholder
-	checkErr(err)
-	defer stmtOut.Close() // Close the statement when we leave main() / the program terminates
+	//stmtOut, err := db.Prepare(sqlstatement) // ? = placeholder
+	//checkErr(err)
+	//defer stmtOut.Close() // Close the statement when we leave main() / the program terminates
 
 	if len(keywords) > 0 {
 		for id, terms := range keywords {
 			synonyms := []string{}
 			m := make(map[string]string) // remove duplicates
 			for _, term := range terms.subterms {
-				fmt.Println(term)
+				//log.Println(term)
 				//rows, err := stmtOut.Exec(term)
 				//checkErr(err)
 				rows, _ := db.Query(sqlstatement, term)
 				for rows.Next() {
 					var word string
 					err = rows.Scan(&word)
-					//fmt.Println(word)
+					//log.Println(word)
 
 					if _, found := m[word]; !found {
 						synonyms = append(synonyms, word)
 						m[word] = word
 					}
 				}
-			}
-				fmt.Println(synonyms)
 				keywords[id].synonyms = append(keywords[id].synonyms, synonyms) // add array to synonym array
-				totalSynonyms := 0
-				for _, synonym_count := range keywords[id].synonyms {
-					totalSynonyms += len(synonym_count)
-				}
-				fmt.Println(terms.term, terms.synonyms)
 			}
+			//log.Println(synonyms)
+
+			totalSynonyms := 0
+			for _, synonym_count := range keywords[id].synonyms {
+				totalSynonyms += len(synonym_count)
+			}
+			log.Println(terms.term, keywords[id].synonyms)
 		}
-	write_results()
 	}
+	write_results()
+}
 
 
 
